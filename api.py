@@ -1,35 +1,57 @@
-# 👇 انسخ هذا الكود واستبدل به أول 15 سطر في الملف (قبل from fastapi import...)
 import socket
 import sys
 import os
 
-# 1. Socket Patch (للأكواد العادية)
+# ==============================================================================
+# 🛠️ CRITICAL FIX: Force IPv4 for Hugging Face Networking
+# ==============================================================================
+
+# 1. Patch Standard Socket (for synchronous requests)
 _original_getaddrinfo = socket.getaddrinfo
+
 def new_getaddrinfo(*args, **kwargs):
-    res = _original_getaddrinfo(*args, **kwargs)
-    ipv4 = [r for r in res if r[0] == socket.AF_INET]
-    return ipv4 if ipv4 else res
+    try:
+        res = _original_getaddrinfo(*args, **kwargs)
+        # Filter strictly for IPv4 (Family 2)
+        ipv4 = [r for r in res if r[0] == socket.AF_INET]
+        # Use IPv4 if available, otherwise fallback to prevent crashes
+        return ipv4 if ipv4 else res
+    except Exception:
+        return _original_getaddrinfo(*args, **kwargs)
+
 socket.getaddrinfo = new_getaddrinfo
 
-# 2. DNSPython Patch (الحل السحري لمشكلة psycopg/SQLAlchemy) 🛠️
+# 2. Patch DNSPython (REQUIRED for Async SQLAlchemy/Psycopg)
+# This prevents the async database driver from finding the IPv6 address via DNS
 try:
     import dns.resolver
+    import dns.rdatatype
+    
+    # Save original method
     _original_resolve = dns.resolver.resolve
     
     def new_resolve(qname, rdtype=dns.rdatatype.A, *args, **kwargs):
-        # لو الطلب كان AAAA (يعني IPv6)، نلغيه ونقول مفيش
+        # If the library asks for IPv6 (AAAA), pretend it doesn't exist
         if rdtype == dns.rdatatype.AAAA:
             raise dns.resolver.NoAnswer()
+        
+        # Otherwise, proceed normally
         return _original_resolve(qname, rdtype, *args, **kwargs)
         
+    # Apply the patch to both module and class
     dns.resolver.resolve = new_resolve
-    # نطبق نفس الشيء على الـ Resolver Class
     dns.resolver.Resolver.resolve = new_resolve
-    print("✅ Enforced IPv4 on dnspython")
+    print("✅ Enforced IPv4 on dnspython (Async DB Fix Applied)")
+    
 except ImportError:
-    pass
-# 👆 نهاية الكود المضاف
-# ... باقي الملف زي ما هو
+    print("⚠️ dnspython not found, skipping async DNS patch")
+except Exception as e:
+    print(f"⚠️ Failed to patch dnspython: {e}")
+
+# ==============================================================================
+# End of Networking Fix
+# ==============================================================================
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -663,8 +685,6 @@ async def _memory_watchdog():
 
 if __name__ == "__main__":
     import uvicorn
-    
-    # --- تم حذف كود ويندوز من هنا لأنه موجود في أول الملف ---
     
     # Enable reload mode for local and staging environments
     is_dev_env = config.ENV_MODE in [EnvMode.LOCAL, EnvMode.STAGING]
