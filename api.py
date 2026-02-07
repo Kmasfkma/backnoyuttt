@@ -1,20 +1,20 @@
-# 👇 ضيف الجزء ده في أول سطر في الملف خالص
 import socket
 
-# Force IPv4 to fix Supabase connection on Hugging Face
+# 👇 التعديل الجديد: تفضيل IPv4 ولكن ليس إجباره (Smart Fallback)
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
     res = _original_getaddrinfo(*args, **kwargs)
-    return [r for r in res if r[0] == socket.AF_INET]
+    # هات عناوين IPv4 بس
+    ipv4 = [r for r in res if r[0] == socket.AF_INET]
+    # لو لقيت IPv4 رجعه، لو ملقيتش رجع النتيجة الأصلية زي ما هي (عشان ميعملش Crash)
+    return ipv4 if ipv4 else res
 
 socket.getaddrinfo = new_getaddrinfo
-# 👆 نهاية الجزء المضاف
+# 👆 نهاية التعديل
 
-# ... هنا بقى باقي الكود العادي بتاعك
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-# ...
+# ... باقي الملف زي ما هو
 from dotenv import load_dotenv
 load_dotenv()
 
