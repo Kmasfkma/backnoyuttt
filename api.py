@@ -1,40 +1,35 @@
 import socket
 import sys
 import os
-import asyncio
-from typing import Any
 
 # ==============================================================================
-# 🛠️ CRITICAL FIX: Force IPv4 for Hugging Face Networking (Sync & Async)
+# 🛠️ SAFE FIX: Filter for IPv4 only (Supabase Connection Fix)
 # ==============================================================================
-
-# 1. Patch Standard Socket (for synchronous requests)
+# نحتفظ بالدالة الأصلية
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
+    # 1. نترك النظام يجلب كل العناوين (IPv4 و IPv6) بشكل طبيعي
+    # هذا يمنع خطأ "No address associated with hostname"
     try:
         res = _original_getaddrinfo(*args, **kwargs)
-        # Filter strictly for IPv4 (Family 2)
-        ipv4 = [r for r in res if r[0] == socket.AF_INET]
-        # Use IPv4 if available
-        return ipv4 if ipv4 else res
-    except Exception:
-        return _original_getaddrinfo(*args, **kwargs)
+    except socket.gaierror as e:
+        # لو فشل البحث تماماً، نرجع الخطأ زي ما هو
+        raise e
 
+    # 2. الآن نفلتر النتائج ونأخذ IPv4 فقط
+    # (Address Family 2 = AF_INET = IPv4)
+    ipv4_results = [r for r in res if r[0] == socket.AF_INET]
+
+    # 3. لو وجدنا IPv4 نرجعه، لو ملقيناش نرجع الكل (عشان السيستم ميوقعش)
+    if ipv4_results:
+        return ipv4_results
+    
+    return res
+
+# تطبيق التعديل
 socket.getaddrinfo = new_getaddrinfo
-
-# 2. Patch AsyncIO Loop (REQUIRED for psycopg/SQLAlchemy Async)
-# This prevents the async event loop from resolving IPv6 addresses
-async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
-    # Force IPv4 family
-    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
-
-# We have to patch this dynamically when the loop starts, 
-# but we can also patch the base class to be safe.
-_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
-asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
-
-print("✅ Enforced IPv4 on Socket & AsyncIO")
+print("✅ Safe IPv4 filter applied")
 
 # ==============================================================================
 # End of Networking Fix
