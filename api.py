@@ -1,38 +1,40 @@
 import socket
 import sys
 import os
+import asyncio
 
 # ==============================================================================
-# 🛠️ CRITICAL FIX: Force IPv4 Only (Hugging Face / Supabase Fix)
+# 🛠️ CRITICAL FIX: Force IPv4 for AsyncIO & Socket (Final Fix)
 # ==============================================================================
-# نقوم باستبدال دالة البحث عن العناوين في النظام (getaddrinfo)
-# لكي نرجع عناوين IPv4 فقط، ونخفي عناوين IPv6 التي تسبب فشل الاتصال.
 
+# 1. Patch AsyncIO (مهم جداً لـ psycopg async)
+# هذه الدالة هي التي تستخدمها مكتبة قاعدة البيانات للاتصال
+_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
+
+async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
+    # نجبر النظام على استخدام IPv4 (AF_INET) مهما كان الطلب
+    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
+
+# تطبيق التعديل على الـ Loop الأساسي
+asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
+
+
+# 2. Patch Standard Socket (للاتصالات العادية المتزامنة)
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
     try:
-        # 1. دع النظام يجلب كل العناوين (IPv4 و IPv6)
-        res = _original_getaddrinfo(*args, **kwargs)
-        
-        # 2. فلترة النتائج: احتفظ فقط بعناوين IPv4 (AF_INET)
-        ipv4_results = [r for r in res if r[0] == socket.AF_INET]
-        
-        # 3. إذا وجدنا عناوين IPv4، نرجعها فقط (هذا يجبر التطبيق على استخدامها)
-        if ipv4_results:
-            return ipv4_results
-            
-        # 4. إذا لم نجد (نادر جداً)، نرجع النتائج الأصلية لتجنب انهيار التطبيق
-        return res
+        # نطلب من النظام IPv4 فقط
+        kwargs['family'] = socket.AF_INET
+        return _original_getaddrinfo(*args, **kwargs)
     except Exception:
-        # في حالة حدوث أي خطأ آخر، عد للسلوك الافتراضي
+        # محاولة أخيرة بدون فلترة لتجنب الانهيار
         return _original_getaddrinfo(*args, **kwargs)
 
-# تطبيق التعديل على مستوى مكتبة socket بالكامل
 socket.getaddrinfo = new_getaddrinfo
-print("✅ Network Patch Applied: Enforced IPv4 preference")
-# ==============================================================================
 
+print("✅ FINAL PATCH: Enforced IPv4 on AsyncIO & Socket")
+# ==============================================================================
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -51,6 +53,7 @@ import asyncio
 from core.utils.logger import logger, structlog
 import time
 from collections import OrderedDict
+import os
 import psutil
 
 from pydantic import BaseModel
@@ -80,6 +83,7 @@ from core.admin.system_status_admin_api import router as system_status_admin_rou
 from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
+import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
