@@ -1,3 +1,20 @@
+# 👇 ضيف الجزء ده في أول سطر في الملف خالص
+import socket
+
+# Force IPv4 to fix Supabase connection on Hugging Face
+_original_getaddrinfo = socket.getaddrinfo
+
+def new_getaddrinfo(*args, **kwargs):
+    res = _original_getaddrinfo(*args, **kwargs)
+    return [r for r in res if r[0] == socket.AF_INET]
+
+socket.getaddrinfo = new_getaddrinfo
+# 👆 نهاية الجزء المضاف
+
+# ... هنا بقى باقي الكود العادي بتاعك
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+# ...
 from dotenv import load_dotenv
 load_dotenv()
 
