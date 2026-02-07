@@ -1,34 +1,52 @@
 import socket
 import sys
 import os
+import asyncio
 
 # ==============================================================================
-# 🛠️ FINAL & SAFE FIX: IPv4 Output Filtering
-# هذا الحل يسمح للنظام بالبحث الطبيعي (لتجنب أخطاء DNS)
-# ثم يفلتر النتيجة ليختار IPv4 فقط (لتجنب مشاكل Hugging Face)
+# 🛠️ FINAL NETWORK PATCH: Force IPv4 by Filtering Results (Sync & Async)
 # ==============================================================================
 
-# نحتفظ بالدالة الأصلية
+# 1. Patch Standard Socket (للمكتبات العادية مثل requests)
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
-    # 1. ننفذ الدالة الأصلية كما هي تماماً بدون تعديل في المدخلات
-    # هذا يمنع خطأ "multiple values for argument" وأخطاء DNS
-    res = _original_getaddrinfo(*args, **kwargs)
+    try:
+        # نترك النظام يبحث بشكل طبيعي (لتجنب أخطاء DNS أو تضارب المعاملات)
+        res = _original_getaddrinfo(*args, **kwargs)
+        
+        # نفلتر النتيجة لنأخذ فقط IPv4
+        ipv4_results = [r for r in res if r[0] == socket.AF_INET]
+        
+        # إذا وجدنا IPv4 نرجعه، وإلا نرجع النتيجة الأصلية (لتجنب الانهيار)
+        if ipv4_results:
+            return ipv4_results
+        return res
+    except Exception:
+        return _original_getaddrinfo(*args, **kwargs)
+
+socket.getaddrinfo = new_getaddrinfo
+
+
+# 2. Patch AsyncIO Event Loop (مهم جداً لـ psycopg/Supabase)
+# هذا هو الجزء الذي كان يسبب المشكلة سابقاً، الآن نعدله بطريقة آمنة
+_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
+
+async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
+    # ننفذ البحث الأصلي بدون تعديل المدخلات (لتجنب الخطأ السابق)
+    res = await _original_loop_getaddrinfo(self, host, port, family=family, type=type, proto=proto, flags=flags)
     
-    # 2. نفلتر النتيجة: نأخذ فقط العناوين من نوع IPv4 (AF_INET)
+    # نفلتر النتائج هنا أيضاً
     ipv4_results = [r for r in res if r[0] == socket.AF_INET]
     
-    # 3. لو وجدنا IPv4 نرجعه، لو ملقيناش نرجع النتيجة الأصلية (عشان ميعملش Crash)
     if ipv4_results:
         return ipv4_results
-        
     return res
 
-# تطبيق التعديل على مستوى النظام
-socket.getaddrinfo = new_getaddrinfo
-print("✅ Safe Network Patch Applied: Filtering for IPv4 results only")
+# نطبق التعديل على الكلاس الأساسي للـ AsyncIO
+asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
 
+print("✅ Applied IPv4 Enforcement Patch (Sync + Async Output Filtering)")
 # ==============================================================================
 
 from dotenv import load_dotenv
