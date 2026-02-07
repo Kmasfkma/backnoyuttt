@@ -2,83 +2,109 @@ import socket
 import sys
 import os
 from urllib.parse import urlparse, urlunparse
+from dotenv import load_dotenv
 
 # ==============================================================================
-# 🛠️ FINAL FIX: Direct IPv4 Resolution Strategy
-# نقوم باستخراج IP النسخة 4 واستبدال النطاق به داخل رابط قاعدة البيانات مباشرة
+# 🛠️ FINAL FIX: Robust DNS Bypass (IPv4 Injection)
+# هذا الكود يقوم بحل عنوان قاعدة البيانات يدوياً وحقنه في النظام
+# لتجاوز مشاكل IPv6 و DNS في بيئات Hugging Face / Docker
 # ==============================================================================
 
-def force_ipv4_for_database():
+load_dotenv()
+
+def resolve_ipv4(hostname):
     """
-    يتجاوز مشاكل DNS في Docker عن طريق حل عنوان قاعدة البيانات إلى IPv4 يدوياً
-    وإعادة كتابة متغير البيئة DATABASE_URL لاستخدام الـ IP بدلاً من النطاق.
+    محاولة ذكية للحصول على عنوان IPv4 للمضيف.
+    تحاول بطرق متعددة لتجنب قيود النظام.
+    """
+    # الطريقة 1: gethostbyname (الأكثر توافقاً لـ IPv4)
+    try:
+        return socket.gethostbyname(hostname)
+    except Exception:
+        pass
+
+    # الطريقة 2: getaddrinfo عام (بدون تحديد عائلة العناوين لتجنب الأخطاء)
+    try:
+        # 0 = AddressFamily.AF_UNSPEC (نقبل أي شيء ثم نفلتر نحن)
+        results = socket.getaddrinfo(hostname, None, 0, socket.SOCK_STREAM)
+        for res in results:
+            # AF_INET هو IPv4 (القيمة عادة 2)
+            if res[0] == socket.AF_INET:
+                return res[4][0] # إرجاع الـ IP
+    except Exception as e:
+        print(f"⚠️ [Network] Resolution fallback failed: {e}")
+    
+    return None
+
+def patch_database_config():
+    """
+    يقوم باستبدال اسم المضيف في DATABASE_URL بعنوان IP مباشر.
+    هذا يمنع مكتبات C مثل uvloop/psycopg من محاولة استخدام IPv6.
     """
     try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        
         db_url = os.environ.get("DATABASE_URL", "")
         if not db_url or "postgres" not in db_url:
             return
 
-        # تحليل الرابط
         parsed = urlparse(db_url)
         hostname = parsed.hostname
         
-        # إذا كان العنوان IP بالفعل، لا تفعل شيئاً
+        # إذا كان العنوان IP بالفعل، لا داعي للتعديل
         try:
             socket.inet_aton(hostname)
+            print("✅ [Network] Database URL is already using an IP address.")
             return
         except socket.error:
-            pass
+            pass # ليس IP، نحتاج لحله
 
-        print(f"🔄 [Network] Resolving IPv4 for host: {hostname}")
+        print(f"🔄 [Network] Resolving DB Host: {hostname}")
         
-        # استخدام socket للحصول على IPv4 حصراً (AF_INET)
-        try:
-            # AF_INET = IPv4, SOCK_STREAM = TCP
-            addr_info = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+        target_ip = resolve_ipv4(hostname)
+        
+        if target_ip:
+            print(f"✅ [Network] Resolved successfully: {target_ip}")
             
-            # استخراج أول عنوان IP
-            if addr_info:
-                target_ip = addr_info[0][4][0]
-                print(f"✅ [Network] Resolved to IPv4: {target_ip}")
-                
-                # إعادة بناء الرابط باستخدام الـ IP الجديد
-                # نحافظ على اسم المستخدم والباسوورد والبورت
-                port_str = f":{parsed.port}" if parsed.port else ""
-                auth_str = ""
-                if parsed.username:
-                    auth_str = f"{parsed.username}"
-                    if parsed.password:
-                        auth_str += f":{parsed.password}"
-                    auth_str += "@"
-                
-                new_netloc = f"{auth_str}{target_ip}{port_str}"
-                
-                # استبدال الجزء الخاص بالعنوان في الرابط
-                new_parsed = parsed._replace(netloc=new_netloc)
-                final_url = urlunparse(new_parsed)
-                
-                # تحديث متغير البيئة ليستخدمه التطبيق بالكامل
-                os.environ["DATABASE_URL"] = final_url
-                print("🚀 [Network] DATABASE_URL patched to use Direct IPv4!")
-            else:
-                print("⚠️ [Network] Could not resolve hostname to IPv4.")
-                
-        except Exception as e:
-            print(f"⚠️ [Network] DNS Resolution failed: {e}")
+            # إعادة بناء الرابط
+            port_str = f":{parsed.port}" if parsed.port else ""
+            auth_str = ""
+            if parsed.username:
+                auth_str = f"{parsed.username}"
+                if parsed.password:
+                    auth_str += f":{parsed.password}"
+                auth_str += "@"
             
-    except Exception as e:
-        print(f"⚠️ [Network] Critical error in patch: {e}")
+            # استبدال النطاق بالـ IP في الرابط الجديد
+            new_netloc = f"{auth_str}{target_ip}{port_str}"
+            new_parsed = parsed._replace(netloc=new_netloc)
+            final_url = urlunparse(new_parsed)
+            
+            # تحديث متغير البيئة بقوة
+            os.environ["DATABASE_URL"] = final_url
+            print(f"🚀 [Network] INJECTED DIRECT IP into DATABASE_URL to bypass DNS.")
+        else:
+            print("❌ [Network] Failed to resolve IPv4 address for database. Connection may fail.")
 
-# 🔥 تنفيذ الإصلاح فوراً عند بدء التشغيل
-force_ipv4_for_database()
+    except Exception as e:
+        print(f"⚠️ [Network] Error patching database config: {e}")
+
+# 🔥 تنفيذ الإصلاح فوراً
+patch_database_config()
 
 # ==============================================================================
+# تطبيق فلتر إضافي على مستوى Socket كخط دفاع ثاني
+# ==============================================================================
+_original_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    try:
+        res = _original_getaddrinfo(*args, **kwargs)
+        # نفضل IPv4 إذا وجد
+        ipv4_res = [r for r in res if r[0] == socket.AF_INET]
+        return ipv4_res if ipv4_res else res
+    except Exception:
+        return _original_getaddrinfo(*args, **kwargs)
 
-from dotenv import load_dotenv
-load_dotenv()
+socket.getaddrinfo = new_getaddrinfo
+# ==============================================================================
 
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
