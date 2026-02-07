@@ -3,37 +3,36 @@ import sys
 import os
 
 # ==============================================================================
-# 🛠️ SAFE FIX: Filter for IPv4 only (Supabase Connection Fix)
+# 🛠️ CRITICAL FIX: Force IPv4 Only (Hugging Face / Supabase Fix)
 # ==============================================================================
-# نحتفظ بالدالة الأصلية
+# نقوم باستبدال دالة البحث عن العناوين في النظام (getaddrinfo)
+# لكي نرجع عناوين IPv4 فقط، ونخفي عناوين IPv6 التي تسبب فشل الاتصال.
+
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
-    # 1. نترك النظام يجلب كل العناوين (IPv4 و IPv6) بشكل طبيعي
-    # هذا يمنع خطأ "No address associated with hostname"
     try:
+        # 1. دع النظام يجلب كل العناوين (IPv4 و IPv6)
         res = _original_getaddrinfo(*args, **kwargs)
-    except socket.gaierror as e:
-        # لو فشل البحث تماماً، نرجع الخطأ زي ما هو
-        raise e
+        
+        # 2. فلترة النتائج: احتفظ فقط بعناوين IPv4 (AF_INET)
+        ipv4_results = [r for r in res if r[0] == socket.AF_INET]
+        
+        # 3. إذا وجدنا عناوين IPv4، نرجعها فقط (هذا يجبر التطبيق على استخدامها)
+        if ipv4_results:
+            return ipv4_results
+            
+        # 4. إذا لم نجد (نادر جداً)، نرجع النتائج الأصلية لتجنب انهيار التطبيق
+        return res
+    except Exception:
+        # في حالة حدوث أي خطأ آخر، عد للسلوك الافتراضي
+        return _original_getaddrinfo(*args, **kwargs)
 
-    # 2. الآن نفلتر النتائج ونأخذ IPv4 فقط
-    # (Address Family 2 = AF_INET = IPv4)
-    ipv4_results = [r for r in res if r[0] == socket.AF_INET]
-
-    # 3. لو وجدنا IPv4 نرجعه، لو ملقيناش نرجع الكل (عشان السيستم ميوقعش)
-    if ipv4_results:
-        return ipv4_results
-    
-    return res
-
-# تطبيق التعديل
+# تطبيق التعديل على مستوى مكتبة socket بالكامل
 socket.getaddrinfo = new_getaddrinfo
-print("✅ Safe IPv4 filter applied")
+print("✅ Network Patch Applied: Enforced IPv4 preference")
+# ==============================================================================
 
-# ==============================================================================
-# End of Networking Fix
-# ==============================================================================
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -52,7 +51,6 @@ import asyncio
 from core.utils.logger import logger, structlog
 import time
 from collections import OrderedDict
-import os
 import psutil
 
 from pydantic import BaseModel
@@ -82,7 +80,6 @@ from core.admin.system_status_admin_api import router as system_status_admin_rou
 from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
-import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
