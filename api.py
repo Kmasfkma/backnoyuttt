@@ -1,19 +1,34 @@
+# 👇 انسخ هذا الكود واستبدل به أول 15 سطر في الملف (قبل from fastapi import...)
 import socket
+import sys
+import os
 
-# 👇 التعديل الجديد: تفضيل IPv4 ولكن ليس إجباره (Smart Fallback)
+# 1. Socket Patch (للأكواد العادية)
 _original_getaddrinfo = socket.getaddrinfo
-
 def new_getaddrinfo(*args, **kwargs):
     res = _original_getaddrinfo(*args, **kwargs)
-    # هات عناوين IPv4 بس
     ipv4 = [r for r in res if r[0] == socket.AF_INET]
-    # لو لقيت IPv4 رجعه، لو ملقيتش رجع النتيجة الأصلية زي ما هي (عشان ميعملش Crash)
     return ipv4 if ipv4 else res
-
 socket.getaddrinfo = new_getaddrinfo
-# 👆 نهاية التعديل
 
-from fastapi import FastAPI
+# 2. DNSPython Patch (الحل السحري لمشكلة psycopg/SQLAlchemy) 🛠️
+try:
+    import dns.resolver
+    _original_resolve = dns.resolver.resolve
+    
+    def new_resolve(qname, rdtype=dns.rdatatype.A, *args, **kwargs):
+        # لو الطلب كان AAAA (يعني IPv6)، نلغيه ونقول مفيش
+        if rdtype == dns.rdatatype.AAAA:
+            raise dns.resolver.NoAnswer()
+        return _original_resolve(qname, rdtype, *args, **kwargs)
+        
+    dns.resolver.resolve = new_resolve
+    # نطبق نفس الشيء على الـ Resolver Class
+    dns.resolver.Resolver.resolve = new_resolve
+    print("✅ Enforced IPv4 on dnspython")
+except ImportError:
+    pass
+# 👆 نهاية الكود المضاف
 # ... باقي الملف زي ما هو
 from dotenv import load_dotenv
 load_dotenv()
