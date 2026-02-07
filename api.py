@@ -1,132 +1,29 @@
-import socket
-import sys
-import os
-from urllib.parse import urlparse, urlunparse
 from dotenv import load_dotenv
-
-# ==============================================================================
-# 🛠️ FINAL FIX: Robust DNS Bypass (IPv4 Injection)
-# هذا الكود يقوم بحل عنوان قاعدة البيانات يدوياً وحقنه في النظام
-# لتجاوز مشاكل IPv6 و DNS في بيئات Hugging Face / Docker
-# ==============================================================================
-
 load_dotenv()
 
-def resolve_ipv4(hostname):
-    """
-    محاولة ذكية للحصول على عنوان IPv4 للمضيف.
-    تحاول بطرق متعددة لتجنب قيود النظام.
-    """
-    # الطريقة 1: gethostbyname (الأكثر توافقاً لـ IPv4)
-    try:
-        return socket.gethostbyname(hostname)
-    except Exception:
-        pass
-
-    # الطريقة 2: getaddrinfo عام (بدون تحديد عائلة العناوين لتجنب الأخطاء)
-    try:
-        # 0 = AddressFamily.AF_UNSPEC (نقبل أي شيء ثم نفلتر نحن)
-        results = socket.getaddrinfo(hostname, None, 0, socket.SOCK_STREAM)
-        for res in results:
-            # AF_INET هو IPv4 (القيمة عادة 2)
-            if res[0] == socket.AF_INET:
-                return res[4][0] # إرجاع الـ IP
-    except Exception as e:
-        print(f"⚠️ [Network] Resolution fallback failed: {e}")
-    
-    return None
-
-def patch_database_config():
-    """
-    يقوم باستبدال اسم المضيف في DATABASE_URL بعنوان IP مباشر.
-    هذا يمنع مكتبات C مثل uvloop/psycopg من محاولة استخدام IPv6.
-    """
-    try:
-        db_url = os.environ.get("DATABASE_URL", "")
-        if not db_url or "postgres" not in db_url:
-            return
-
-        parsed = urlparse(db_url)
-        hostname = parsed.hostname
-        
-        # إذا كان العنوان IP بالفعل، لا داعي للتعديل
-        try:
-            socket.inet_aton(hostname)
-            print("✅ [Network] Database URL is already using an IP address.")
-            return
-        except socket.error:
-            pass # ليس IP، نحتاج لحله
-
-        print(f"🔄 [Network] Resolving DB Host: {hostname}")
-        
-        target_ip = resolve_ipv4(hostname)
-        
-        if target_ip:
-            print(f"✅ [Network] Resolved successfully: {target_ip}")
-            
-            # إعادة بناء الرابط
-            port_str = f":{parsed.port}" if parsed.port else ""
-            auth_str = ""
-            if parsed.username:
-                auth_str = f"{parsed.username}"
-                if parsed.password:
-                    auth_str += f":{parsed.password}"
-                auth_str += "@"
-            
-            # استبدال النطاق بالـ IP في الرابط الجديد
-            new_netloc = f"{auth_str}{target_ip}{port_str}"
-            new_parsed = parsed._replace(netloc=new_netloc)
-            final_url = urlunparse(new_parsed)
-            
-            # تحديث متغير البيئة بقوة
-            os.environ["DATABASE_URL"] = final_url
-            print(f"🚀 [Network] INJECTED DIRECT IP into DATABASE_URL to bypass DNS.")
-        else:
-            print("❌ [Network] Failed to resolve IPv4 address for database. Connection may fail.")
-
-    except Exception as e:
-        print(f"⚠️ [Network] Error patching database config: {e}")
-
-# 🔥 تنفيذ الإصلاح فوراً
-patch_database_config()
-
-# ==============================================================================
-# تطبيق فلتر إضافي على مستوى Socket كخط دفاع ثاني
-# ==============================================================================
-_original_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    try:
-        res = _original_getaddrinfo(*args, **kwargs)
-        # نفضل IPv4 إذا وجد
-        ipv4_res = [r for r in res if r[0] == socket.AF_INET]
-        return ipv4_res if ipv4_res else res
-    except Exception:
-        return _original_getaddrinfo(*args, **kwargs)
-
-socket.getaddrinfo = new_getaddrinfo
-# ==============================================================================
+import sys
+import os
+import asyncio
+import time
+import uuid
+import psutil
+from collections import OrderedDict
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+
+# Core Services & Utils
 from core.services import redis
 from core.utils.openapi_config import configure_openapi
-from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
-from datetime import datetime, timezone
 from core.utils.config import config, EnvMode
-import asyncio
 from core.utils.logger import logger, structlog
-import time
-from collections import OrderedDict
-import os
-import psutil
 
-from pydantic import BaseModel
-import uuid
-
-
+# Routers
 from core.versioning.api import router as versioning_router
 from core.agents.api import router as agent_runs_router
 from core.agents.agent_crud import router as agent_crud_router
@@ -150,13 +47,29 @@ from core.admin.system_status_admin_api import router as system_status_admin_rou
 from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
-import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
 from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
 from auth import api as auth_api
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+
+# Additional Routers
+from core.mcp_module import api as mcp_api
+from core.credentials import api as credentials_api
+from core.templates import api as template_api
+from core.templates import presentations_api
+from core.services import voice_generation as voice_api
+from core.knowledge_base import api as knowledge_base_api
+from core.notifications import presence_api
+from core.composio_integration import api as composio_api
+from core.google.google_slides_api import router as google_slides_router
+from core.google.google_docs_api import router as google_docs_router
+from core.referrals import router as referrals_router
+from core.memory.api import router as memory_router
+from core.test_harness.api import router as test_harness_router, e2e_router
+from core.sandbox.canvas_ai_api import router as canvas_ai_router
+from core.admin.stateless_admin_api import router as stateless_admin_router
 
 
 if sys.platform == "win32":
@@ -179,7 +92,6 @@ _memory_watchdog_task = None
 _stream_cleanup_task = None
 
 # Graceful shutdown flag for health checks
-# When True, health check will return unhealthy to stop receiving traffic
 _is_shutting_down = False
 
 @asynccontextmanager
@@ -266,7 +178,6 @@ async def lifespan(app: FastAPI):
         logger.info(f"Starting graceful shutdown for instance {instance_id}")
         
         # Give K8s readiness probe time to detect unhealthy state
-        # This ensures no new traffic is routed to this pod
         await asyncio.sleep(2)
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
@@ -277,7 +188,6 @@ async def lifespan(app: FastAPI):
         if active_run_ids:
             logger.warning(f"🛑 Stopping {len(active_run_ids)} active agent runs on shutdown: {active_run_ids}")
             
-            # Set cancellation events for all running runs
             for agent_run_id in active_run_ids:
                 try:
                     event = _cancellation_events.get(agent_run_id)
@@ -287,13 +197,10 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.error(f"Failed to set cancellation event for {agent_run_id}: {e}")
             
-            # Give tasks a moment to handle cancellation gracefully
             await asyncio.sleep(1)
             
-            # Force update DB status for any runs that didn't clean up
             for agent_run_id in active_run_ids:
                 try:
-                    # Update status to stopped with shutdown message
                     await update_agent_run_status(
                         agent_run_id,
                         "stopped",
@@ -301,7 +208,6 @@ async def lifespan(app: FastAPI):
                     )
                     logger.info(f"✅ Marked agent run {agent_run_id} as stopped (instance shutdown)")
                     
-                    # Also set Redis stop signal for any reconnecting clients
                     try:
                         await redis.set_stop_signal(agent_run_id)
                     except Exception:
@@ -318,7 +224,6 @@ async def lifespan(app: FastAPI):
         
         logger.debug("Cleaning up resources")
         
-        # Stop CloudWatch worker metrics task
         if _worker_metrics_task is not None:
             _worker_metrics_task.cancel()
             try:
@@ -326,7 +231,6 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         
-        # Stop memory watchdog task
         if _memory_watchdog_task is not None:
             _memory_watchdog_task.cancel()
             try:
@@ -334,7 +238,6 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-        # Stop sandbox pool service
         from core.sandbox.pool_background import stop_pool_service
         await stop_pool_service()
         
@@ -348,7 +251,6 @@ async def lifespan(app: FastAPI):
         logger.debug("Disconnecting from database")
         await db.disconnect()
         
-        # Close direct Postgres connection pool
         from core.services.db import close_db
         await close_db()
     except Exception as e:
@@ -384,7 +286,6 @@ async def log_requests_middleware(request: Request, call_next):
         query_params=query_params
     )
 
-    # Log the incoming request
     logger.debug(f"Request started: {method} {path} from {client_ip} | Query: {query_params}")
     
     try:
@@ -415,12 +316,10 @@ allowed_origins = [
 # Allow all *.kortix.com subdomains and Vercel preview deployments
 allow_origin_regex = r"https://([a-z0-9-]+\.)?kortix\.com|https://.*-kortixai\.vercel\.app"
 
-# Add local origins for development
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
     allowed_origins.append("http://127.0.0.1:3000")
 
-# Add staging-specific origins
 if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.kortix.com")
     allowed_origins.append("http://localhost:3000")
@@ -438,7 +337,6 @@ app.add_middleware(
 api_router = APIRouter()
 
 # Include all API routers without individual prefixes
-# Core routers
 api_router.include_router(versioning_router)
 api_router.include_router(agent_runs_router)
 api_router.include_router(agent_crud_router)
@@ -451,7 +349,7 @@ api_router.include_router(endpoints_router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(setup_router)
-api_router.include_router(webhook_router)  # Webhooks at /api/webhooks/*
+api_router.include_router(webhook_router)
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
@@ -463,64 +361,32 @@ api_router.include_router(system_status_admin_router)
 api_router.include_router(sandbox_pool_admin_router)
 api_router.include_router(system_status_router)
 
-from core.mcp_module import api as mcp_api
-from core.credentials import api as credentials_api
-from core.templates import api as template_api
-from core.templates import presentations_api
-
 api_router.include_router(mcp_api.router)
 api_router.include_router(credentials_api.router, prefix="/secure-mcp")
 api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
 api_router.include_router(transcription_api.router)
-
-from core.services import voice_generation as voice_api
 api_router.include_router(voice_api.router)
-
-from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
-
 api_router.include_router(triggers_api.router)
-
 api_router.include_router(notifications_api.router)
-
-from core.notifications import presence_api
 api_router.include_router(presence_api.router)
-
-from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
-
-from core.google.google_slides_api import router as google_slides_router
 api_router.include_router(google_slides_router)
-
-from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
-
-from core.referrals import router as referrals_router
-from core.memory.api import router as memory_router
 api_router.include_router(referrals_router)
 api_router.include_router(memory_router)
-
-from core.test_harness.api import router as test_harness_router, e2e_router
 api_router.include_router(test_harness_router)
 api_router.include_router(e2e_router)
-
-
-from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
-
-from core.admin.stateless_admin_api import router as stateless_admin_router
 api_router.include_router(stateless_admin_router)
-# Auth OTP endpoint for expired magic links
 api_router.include_router(auth_api.router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
 
-    # During shutdown, return unhealthy status
-    # This causes K8s readinessProbe to fail and removes pod from service endpoints
     if _is_shutting_down:
         logger.debug(f"Health check returning unhealthy (shutting down) for instance {instance_id}")
         raise HTTPException(
@@ -553,16 +419,7 @@ async def prewarm_user_caches(user_id: str = Depends(verify_and_get_user_id_from
 
 @api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
 async def metrics_endpoint():
-    """
-    Get API instance metrics for monitoring.
-    
-    Returns:
-        - active_agent_runs: Total active runs across all instances (from DB)
-        - active_redis_streams: Active Redis stream keys
-        - orphaned_streams: Streams without DB records (should be 0)
-    """
     from core.services import worker_metrics
-    
     try:
         return await worker_metrics.get_worker_metrics()
     except Exception as e:
@@ -571,9 +428,7 @@ async def metrics_endpoint():
 
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
 async def debug_endpoint():
-    """Get basic debug information for troubleshooting."""
     from core.agents.api import _cancellation_events
-    
     return {
         "instance_id": instance_id,
         "active_runs_on_instance": len(_cancellation_events),
@@ -583,23 +438,11 @@ async def debug_endpoint():
 
 @api_router.get("/debug/redis", summary="Redis Health & Diagnostics", operation_id="redis_health", tags=["system"])
 async def redis_health_endpoint():
-    """
-    Get detailed Redis health and pool diagnostics.
-    
-    Returns:
-        - status: healthy, degraded, or unhealthy
-        - latency_ms: ping latency in milliseconds
-        - pool: connection pool statistics
-        - timeouts: configured timeout values
-    """
     try:
         health_data = await redis.health_check()
-        
-        # Add instance info
         health_data["instance_id"] = instance_id    
         health_data["timestamp"] = datetime.now(timezone.utc).isoformat()
         
-        # Return appropriate status code
         if health_data.get("status") == "unhealthy":
             return JSONResponse(status_code=503, content=health_data)
         elif health_data.get("status") == "degraded":
@@ -624,7 +467,6 @@ async def health_check_docker():
     try:
         client = await redis.get_client()
         await client.ping()
-        # Use the global db singleton instead of creating a new instance
         db_client = await db.client
         await db_client.table("threads").select("thread_id").limit(1).execute()
         logger.debug("Health docker check complete")
@@ -637,19 +479,10 @@ async def health_check_docker():
         logger.error(f"Failed health docker check: {e}")
         raise HTTPException(status_code=500, detail="Health check failed")
 
-
 app.include_router(api_router, prefix="/v1")
 
-
 async def _memory_watchdog():
-    """Monitor worker memory and detect stale agent runs.
-    
-    Dynamically calculates per-worker memory limit based on total RAM and worker count.
-    Also tracks _cancellation_events and lifecycle_tracker for cleanup failure detection.
-    """
     import time as time_module
-    
-    # Calculate per-worker memory limit dynamically
     workers = int(os.getenv("WORKERS", "16"))
     total_ram_mb = psutil.virtual_memory().total / 1024 / 1024
     per_worker_limit_mb = (total_ram_mb * 0.8) / workers
@@ -671,7 +504,6 @@ async def _memory_watchdog():
                 mem_mb = mem_info.rss / 1024 / 1024
                 mem_percent = (mem_mb / per_worker_limit_mb) * 100
                 
-                # === NEW: Cleanup state tracking ===
                 from core.agents.api import _cancellation_events
                 try:
                     from core.utils.lifecycle_tracker import get_active_runs
@@ -688,7 +520,6 @@ async def _memory_watchdog():
                 active_count = len(active_runs)
                 stale_count = len(stale_runs)
                 
-                # Always log cleanup state if there are issues
                 if stale_count > 0 or cancellation_count > 10:
                     logger.warning(
                         f"[WATCHDOG] mem={mem_mb:.0f}MB "
@@ -699,9 +530,7 @@ async def _memory_watchdog():
                     )
                     if stale_runs:
                         logger.warning(f"[WATCHDOG] stale_run_ids={stale_runs[:5]}")
-                # === END NEW ===
                 
-                # Existing memory threshold logging
                 if mem_mb > critical_threshold_mb:
                     logger.error(
                         f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}%) "
@@ -733,15 +562,11 @@ async def _memory_watchdog():
     except Exception as e:
         logger.error(f"Memory watchdog failed: {e}")
 
-
 if __name__ == "__main__":
     import uvicorn
-    
-    # Enable reload mode for local and staging environments
     is_dev_env = config.ENV_MODE in [EnvMode.LOCAL, EnvMode.STAGING]
     workers = 1 if is_dev_env else 4
     reload = is_dev_env
-    
     logger.debug(f"Starting server on 0.0.0.0:8000 with {workers} workers (reload={reload})")
     uvicorn.run(
         "api:app", 
