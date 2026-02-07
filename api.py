@@ -1,41 +1,34 @@
 import socket
 import sys
 import os
-import asyncio
 
 # ==============================================================================
-# 🛠️ FINAL FIX: IPv4 Filter (Output-Based Patch)
-# هذا الحل يفلتر "النتائج" بدلاً من التعديل على "المدخلات" لتجنب أخطاء البايثون
+# 🛠️ FINAL & SAFE FIX: IPv4 Output Filtering
+# هذا الحل يسمح للنظام بالبحث الطبيعي (لتجنب أخطاء DNS)
+# ثم يفلتر النتيجة ليختار IPv4 فقط (لتجنب مشاكل Hugging Face)
 # ==============================================================================
 
-# 1. Patch Standard Socket (فلترة النتائج للاتصالات العادية)
+# نحتفظ بالدالة الأصلية
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
-    # ننفذ الدالة الأصلية كما هي تماماً لتجنب تضارب المعاملات
+    # 1. ننفذ الدالة الأصلية كما هي تماماً بدون تعديل في المدخلات
+    # هذا يمنع خطأ "multiple values for argument" وأخطاء DNS
     res = _original_getaddrinfo(*args, **kwargs)
     
-    # نفلتر النتيجة لنأخذ IPv4 فقط (Address Family 2)
+    # 2. نفلتر النتيجة: نأخذ فقط العناوين من نوع IPv4 (AF_INET)
     ipv4_results = [r for r in res if r[0] == socket.AF_INET]
     
-    # لو وجدنا IPv4 نرجعه، غير كده نرجع النتيجة الأصلية (عشان ميعملش Crash)
+    # 3. لو وجدنا IPv4 نرجعه، لو ملقيناش نرجع النتيجة الأصلية (عشان ميعملش Crash)
     if ipv4_results:
         return ipv4_results
+        
     return res
 
+# تطبيق التعديل على مستوى النظام
 socket.getaddrinfo = new_getaddrinfo
+print("✅ Safe Network Patch Applied: Filtering for IPv4 results only")
 
-# 2. Patch AsyncIO (إجبار IPv4 للاتصالات غير المتزامنة - قاعدة البيانات)
-# نعدل الدالة المسؤولة عن الـ DNS في الـ Event Loop
-_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
-
-async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
-    # هنا نجبره يستخدم AF_INET (IPv4) صراحةً
-    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
-
-asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
-
-print("✅ Network Patch Applied: Safe IPv4 Filtering")
 # ==============================================================================
 
 from dotenv import load_dotenv
