@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # 2. تعديل إعدادات الشبكة لإجبار استخدام IPv4 (حل مشكلة Supabase) 🛠️
+# هذا السطر هو الحل السحري لمشكلة الاتصال بـ Postgres
 RUN echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf
 
 # 3. Install Dependencies + Redis
