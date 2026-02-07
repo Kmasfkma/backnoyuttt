@@ -1,9 +1,11 @@
 import socket
 import sys
 import os
+import asyncio
+from typing import Any
 
 # ==============================================================================
-# 🛠️ CRITICAL FIX: Force IPv4 for Hugging Face Networking
+# 🛠️ CRITICAL FIX: Force IPv4 for Hugging Face Networking (Sync & Async)
 # ==============================================================================
 
 # 1. Patch Standard Socket (for synchronous requests)
@@ -14,39 +16,25 @@ def new_getaddrinfo(*args, **kwargs):
         res = _original_getaddrinfo(*args, **kwargs)
         # Filter strictly for IPv4 (Family 2)
         ipv4 = [r for r in res if r[0] == socket.AF_INET]
-        # Use IPv4 if available, otherwise fallback to prevent crashes
+        # Use IPv4 if available
         return ipv4 if ipv4 else res
     except Exception:
         return _original_getaddrinfo(*args, **kwargs)
 
 socket.getaddrinfo = new_getaddrinfo
 
-# 2. Patch DNSPython (REQUIRED for Async SQLAlchemy/Psycopg)
-# This prevents the async database driver from finding the IPv6 address via DNS
-try:
-    import dns.resolver
-    import dns.rdatatype
-    
-    # Save original method
-    _original_resolve = dns.resolver.resolve
-    
-    def new_resolve(qname, rdtype=dns.rdatatype.A, *args, **kwargs):
-        # If the library asks for IPv6 (AAAA), pretend it doesn't exist
-        if rdtype == dns.rdatatype.AAAA:
-            raise dns.resolver.NoAnswer()
-        
-        # Otherwise, proceed normally
-        return _original_resolve(qname, rdtype, *args, **kwargs)
-        
-    # Apply the patch to both module and class
-    dns.resolver.resolve = new_resolve
-    dns.resolver.Resolver.resolve = new_resolve
-    print("✅ Enforced IPv4 on dnspython (Async DB Fix Applied)")
-    
-except ImportError:
-    print("⚠️ dnspython not found, skipping async DNS patch")
-except Exception as e:
-    print(f"⚠️ Failed to patch dnspython: {e}")
+# 2. Patch AsyncIO Loop (REQUIRED for psycopg/SQLAlchemy Async)
+# This prevents the async event loop from resolving IPv6 addresses
+async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
+    # Force IPv4 family
+    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
+
+# We have to patch this dynamically when the loop starts, 
+# but we can also patch the base class to be safe.
+_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
+asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
+
+print("✅ Enforced IPv4 on Socket & AsyncIO")
 
 # ==============================================================================
 # End of Networking Fix
