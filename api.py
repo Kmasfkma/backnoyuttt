@@ -4,36 +4,38 @@ import os
 import asyncio
 
 # ==============================================================================
-# 🛠️ CRITICAL FIX: Force IPv4 for AsyncIO & Socket (Final Fix)
+# 🛠️ FINAL FIX: IPv4 Filter (Output-Based Patch)
+# هذا الحل يفلتر "النتائج" بدلاً من التعديل على "المدخلات" لتجنب أخطاء البايثون
 # ==============================================================================
 
-# 1. Patch AsyncIO (مهم جداً لـ psycopg async)
-# هذه الدالة هي التي تستخدمها مكتبة قاعدة البيانات للاتصال
-_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
-
-async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
-    # نجبر النظام على استخدام IPv4 (AF_INET) مهما كان الطلب
-    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
-
-# تطبيق التعديل على الـ Loop الأساسي
-asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
-
-
-# 2. Patch Standard Socket (للاتصالات العادية المتزامنة)
+# 1. Patch Standard Socket (فلترة النتائج للاتصالات العادية)
 _original_getaddrinfo = socket.getaddrinfo
 
 def new_getaddrinfo(*args, **kwargs):
-    try:
-        # نطلب من النظام IPv4 فقط
-        kwargs['family'] = socket.AF_INET
-        return _original_getaddrinfo(*args, **kwargs)
-    except Exception:
-        # محاولة أخيرة بدون فلترة لتجنب الانهيار
-        return _original_getaddrinfo(*args, **kwargs)
+    # ننفذ الدالة الأصلية كما هي تماماً لتجنب تضارب المعاملات
+    res = _original_getaddrinfo(*args, **kwargs)
+    
+    # نفلتر النتيجة لنأخذ IPv4 فقط (Address Family 2)
+    ipv4_results = [r for r in res if r[0] == socket.AF_INET]
+    
+    # لو وجدنا IPv4 نرجعه، غير كده نرجع النتيجة الأصلية (عشان ميعملش Crash)
+    if ipv4_results:
+        return ipv4_results
+    return res
 
 socket.getaddrinfo = new_getaddrinfo
 
-print("✅ FINAL PATCH: Enforced IPv4 on AsyncIO & Socket")
+# 2. Patch AsyncIO (إجبار IPv4 للاتصالات غير المتزامنة - قاعدة البيانات)
+# نعدل الدالة المسؤولة عن الـ DNS في الـ Event Loop
+_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
+
+async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
+    # هنا نجبره يستخدم AF_INET (IPv4) صراحةً
+    return await _original_loop_getaddrinfo(self, host, port, family=socket.AF_INET, type=type, proto=proto, flags=flags)
+
+asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
+
+print("✅ Network Patch Applied: Safe IPv4 Filtering")
 # ==============================================================================
 
 from dotenv import load_dotenv
