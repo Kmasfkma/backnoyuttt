@@ -1,3 +1,12 @@
+---
+title: Okacnimind
+emoji: 🚀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
 
 **0. Launching with Docker (Manual)**
 
@@ -6,21 +15,17 @@ You can manually launch all Suna services using Docker Compose from the project 
 ```bash
 # From project root directory
 cd /path/to/suna
-```
+0.1 Start all services
 
-**0.1 Start all services**
-
-```bash
+Bash
 # Start all services (Redis, Backend, Frontend, Worker)
 docker compose up -d
 
 # Or start specific services
 docker compose up -d redis backend frontend
-```
+0.2 Start services individually
 
-**0.2 Start services individually**
-
-```bash
+Bash
 # Start Redis only
 docker compose up -d redis
 
@@ -32,11 +37,9 @@ docker compose up -d frontend
 
 # Start Worker (optional, for background tasks)
 docker compose up -d worker
-```
+0.3 View logs
 
-**0.3 View logs**
-
-```bash
+Bash
 # View all logs
 docker compose logs -f
 
@@ -44,78 +47,63 @@ docker compose logs -f
 docker compose logs -f backend
 docker compose logs -f frontend
 docker compose logs -f redis
-```
+0.4 Stop services
 
-**0.4 Stop services**
-
-```bash
+Bash
 # Stop all services
 docker compose down
 
-# Stop and remove volumes           
+# Stop and remove volumes 
 docker compose down -v
-```
+0.5 Check status
 
-**0.5 Check status**
-
-```bash
+Bash
 # Check running containers
 docker compose ps
 
 # Check all containers (including stopped)
 docker compose ps -a
-```
+Access points:
 
-**Access points:**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- Redis: localhost:6379
+Frontend: http://localhost:3000
 
----
+Backend API: http://localhost:8000
 
-**1. Launching the backend**
+Redis: localhost:6379
 
-```bash
+1. Launching the backend
+
+Bash
 cd backend
-```
+1.1 Launching Redis
 
-**1.1 Launching Redis**
-
-```bash
+Bash
 # Option A: Use Docker
 docker compose up redis
 
 # Option B: Run locally (if installed)
 redis-server
-```
+1.3 Running the API
 
-
-**1.3 Running the API**
-
-```bash
+Bash
 cd backend && uv run api.py
-```
+2. Launching the frontend
 
----
-
-**2. Launching the frontend**
-
-```bash
+Bash
 cd apps/frontend
 pnpm install
 pnpm run dev
-```
+Access the app at http://localhost:3000
 
-Access the app at `http://localhost:3000`
+Build Verification
+Run make verify or uv run python core/utils/scripts/verify_build.py to check:
 
-## Build Verification
+All imports work
 
-Run `make verify` or `uv run python core/utils/scripts/verify_build.py` to check:
-- All imports work
-- No syntax errors
-- No undefined names
-- API can be imported
-- Worker can be imported
+No syntax errors
 
-See `core/utils/scripts/README.md` for more details on available scripts.
+No undefined names
 
+API can be imported
+
+Worker can be imported
