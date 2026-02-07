@@ -1,56 +1,84 @@
 import socket
 import sys
 import os
-import asyncio
+from urllib.parse import urlparse, urlunparse
+from dotenv import load_dotenv
 
 # ==============================================================================
-# 🛠️ FINAL NETWORK PATCH: Force IPv4 by Filtering Results (Sync & Async)
+# 🛠️ CRITICAL FIX: Direct IPv4 Resolution for Supabase/HuggingFace
 # ==============================================================================
 
-# 1. Patch Standard Socket (للمكتبات العادية مثل requests)
+# 1. Load Environment Variables First
+load_dotenv()
+
+# 2. Patch Standard Socket (for other sync libraries)
 _original_getaddrinfo = socket.getaddrinfo
-
 def new_getaddrinfo(*args, **kwargs):
     try:
-        # نترك النظام يبحث بشكل طبيعي (لتجنب أخطاء DNS أو تضارب المعاملات)
         res = _original_getaddrinfo(*args, **kwargs)
-        
-        # نفلتر النتيجة لنأخذ فقط IPv4
         ipv4_results = [r for r in res if r[0] == socket.AF_INET]
-        
-        # إذا وجدنا IPv4 نرجعه، وإلا نرجع النتيجة الأصلية (لتجنب الانهيار)
-        if ipv4_results:
-            return ipv4_results
-        return res
+        return ipv4_results if ipv4_results else res
     except Exception:
         return _original_getaddrinfo(*args, **kwargs)
 
 socket.getaddrinfo = new_getaddrinfo
 
+# 3. PRE-RESOLVE DATABASE HOST (The Magic Fix) 🪄
+# This bypasses uvloop/asyncio DNS resolution issues by feeding the IP directly to psycopg.
+def patch_database_url():
+    try:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return
 
-# 2. Patch AsyncIO Event Loop (مهم جداً لـ psycopg/Supabase)
-# هذا هو الجزء الذي كان يسبب المشكلة سابقاً، الآن نعدله بطريقة آمنة
-_original_loop_getaddrinfo = asyncio.base_events.BaseEventLoop.getaddrinfo
+        parsed = urlparse(db_url)
+        hostname = parsed.hostname
+        
+        # Only patch if it looks like a Supabase domain
+        if hostname and ("supabase.co" in hostname or "supabase.in" in hostname):
+            print(f"🔄 [Network Fix] Resolving database host: {hostname}")
+            
+            # Force resolve to IPv4 using our patched socket
+            # AF_INET = IPv4
+            addrs = _original_getaddrinfo(hostname, None, socket.AF_INET)
+            
+            if addrs:
+                # Extract the first IPv4 address
+                # addrs structure: (family, type, proto, canonname, sockaddr)
+                # sockaddr for IPv4 is (ip, port)
+                target_ip = addrs[0][4][0]
+                
+                print(f"✅ [Network Fix] Resolved to IPv4: {target_ip}")
+                
+                # Reconstruct the URL with the IP instead of the hostname
+                # We replace the hostname in the netloc part
+                if parsed.port:
+                    new_netloc_host = f"{target_ip}:{parsed.port}"
+                else:
+                    new_netloc_host = target_ip
+                    
+                # Handle username:password@host format carefully
+                if "@" in parsed.netloc:
+                    auth_part = parsed.netloc.split("@")[0]
+                    new_netloc = f"{auth_part}@{new_netloc_host}"
+                else:
+                    new_netloc = new_netloc_host
+                
+                # Create the new URL
+                new_parsed = parsed._replace(netloc=new_netloc)
+                new_db_url = urlunparse(new_parsed)
+                
+                # Override the environment variable
+                os.environ["DATABASE_URL"] = new_db_url
+                print("🚀 [Network Fix] DATABASE_URL patched with direct IP!")
+            else:
+                print("⚠️ [Network Fix] No IPv4 address found for database host.")
+    except Exception as e:
+        print(f"⚠️ [Network Fix] Failed to patch database URL: {e}")
 
-async def new_loop_getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
-    # ننفذ البحث الأصلي بدون تعديل المدخلات (لتجنب الخطأ السابق)
-    res = await _original_loop_getaddrinfo(self, host, port, family=family, type=type, proto=proto, flags=flags)
-    
-    # نفلتر النتائج هنا أيضاً
-    ipv4_results = [r for r in res if r[0] == socket.AF_INET]
-    
-    if ipv4_results:
-        return ipv4_results
-    return res
-
-# نطبق التعديل على الكلاس الأساسي للـ AsyncIO
-asyncio.base_events.BaseEventLoop.getaddrinfo = new_loop_getaddrinfo
-
-print("✅ Applied IPv4 Enforcement Patch (Sync + Async Output Filtering)")
+# Execute the patch immediately
+patch_database_url()
 # ==============================================================================
-
-from dotenv import load_dotenv
-load_dotenv()
 
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,7 +94,6 @@ import asyncio
 from core.utils.logger import logger, structlog
 import time
 from collections import OrderedDict
-import os
 import psutil
 
 from pydantic import BaseModel
