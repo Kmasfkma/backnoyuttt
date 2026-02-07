@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# 2. Force IPv4 for Supabase connection (مهم جداً للاتصال)
+# 2. Force IPv4 for Supabase connection (الحل القديم للشبكة)
 RUN echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf
 
 # 3. Install System Dependencies + Redis
@@ -30,8 +30,8 @@ ENV UV_LINK_MODE=copy
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
 
 # ---------------------------------------------------------------------------
-# 🛠️ HOTFIX: إصلاح مشكلة التعارض بين SQLAlchemy و AnyIO
-# السطر ده هيحدث المكتبات دي غصب عن الملفات القديمة
+# 🛠️ HOTFIX: إصلاح مشكلة الـ 500 Error وتعارض المكتبات
+# نقوم بتحديث المكتبات يدوياً داخل البيئة الافتراضية
 # ---------------------------------------------------------------------------
 RUN . .venv/bin/activate && pip install --upgrade "sqlalchemy>=2.0.29" "greenlet>=3.0.3"
 
