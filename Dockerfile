@@ -33,7 +33,10 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
 # 🛠️ HOTFIX: إصلاح مشكلة الـ 500 Error وتعارض المكتبات
 # نقوم بتحديث المكتبات يدوياً داخل البيئة الافتراضية
 # ---------------------------------------------------------------------------
-RUN . .venv/bin/activate && pip install --upgrade "sqlalchemy>=2.0.29" "greenlet>=3.0.3"
+# ---------------------------------------------------------------------------
+# 🛠️ HOTFIX v2: Force Re-install to break cache
+# ---------------------------------------------------------------------------
+RUN . .venv/bin/activate && pip install --upgrade --no-cache-dir "sqlalchemy>=2.0.30" "greenlet>=3.0.3"
 
 # 5. Install Playwright
 RUN . .venv/bin/activate && pip install playwright && playwright install chromium --with-deps
