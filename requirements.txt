@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+psutil
+redis
+supabase
+structlog
+websockets
+requests
