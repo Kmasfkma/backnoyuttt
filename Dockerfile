@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (نحتفظ بملف requirements.txt الأخير)
+# 4. تثبيت المكتبات
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
@@ -37,8 +37,8 @@ RUN python -m playwright install chromium
 # 6. نسخ الكود
 COPY --chown=1000:1000 . .
 
-# --- الخطوة السحرية: إنشاء ملف محاكاة (Mock) ذكي ---
-# ننشئ ملف بايثون يحتوي على كلاس يقبل أي شيء (Arguments, Context Managers, Awaitables)
+# --- التصحيح السحري الشامل: تعطيل Daytona في كل الملفات ---
+# 1. إنشاء ملف محاكاة (Mock) ذكي
 RUN echo 'class Mock:\n\
     def __init__(self, *args, **kwargs): pass\n\
     def __call__(self, *args, **kwargs): return self\n\
@@ -50,8 +50,7 @@ RUN echo 'class Mock:\n\
 # تعيين كل الأسماء المطلوبة لهذا الكلاس\n\
 AsyncDaytona=DaytonaConfig=CreateSandboxFromSnapshotParams=AsyncSandbox=SessionExecuteRequest=Resources=SandboxState=WorkspaceState=Mock' > /app/mock_daytona.py
 
-# --- توجيه الكود لاستخدام الملف الوهمي بدلاً من المكتبة المفقودة ---
-# نغير أي سطر يستورد من "daytona_sdk" ليستورد من "mock_daytona"
+# 2. توجيه الكود لاستخدام الملف الوهمي بدلاً من المكتبة المفقودة
 RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from daytona_sdk/from mock_daytona/g'
 
 USER 1000
