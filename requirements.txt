@@ -10,7 +10,7 @@ requests
 playwright
 tavily-python
 daytona-sdk
-langfuse
+langfuse>=2.0.0
 watchtower
 boto3
 pydantic
