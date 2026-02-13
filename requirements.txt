@@ -29,3 +29,6 @@ cryptography
 # --- مكتبات مساعدة إضافية ---
 aiohttp
 asyncio
+# --- قواعد البيانات ---
+sqlalchemy
+asyncpg
