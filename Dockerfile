@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (كما اتفقنا، بدون api-client)
+# 4. تثبيت المكتبات (نحتفظ بملف requirements.txt الأخير كما هو)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
@@ -37,9 +37,11 @@ RUN python -m playwright install chromium
 # 6. نسخ الكود
 COPY --chown=1000:1000 . .
 
-# --- الخطوة السحرية: إصلاح خطأ الاستيراد في الكود ---
-# نقوم بتعطيل استيراد daytona_sdk واستبداله بـ object وهمي لتمرير التشغيل
-RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked for build/" core/sandbox/tool_base.py || true
+# --- التصحيح السحري: تعطيل Daytona في كل الملفات المسببة للمشاكل ---
+# 1. إصلاح tool_base.py
+RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/tool_base.py || true
+# 2. إصلاح resolver.py (السبب في الخطأ الأخير)
+RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/resolver.py || true
 
 USER 1000
 EXPOSE 8000
