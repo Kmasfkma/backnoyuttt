@@ -17,46 +17,32 @@ except ImportError:
 ENV_MODE = os.getenv("ENV_MODE", "LOCAL").upper()
 
 # Set default logging level based on environment
-# Production should be INFO (less verbose), local/staging can be DEBUG
 default_level = "INFO" if ENV_MODE == "PRODUCTION" else "DEBUG"
-LOGGING_LEVEL = logging.getLevelNamesMapping().get(
-    os.getenv("LOGGING_LEVEL", default_level).upper(),
-    logging.INFO,
-)
 
-# Set root logger level (but don't add default handler - we'll add our own)
+# --- الإصلاح هنا: استخدام getattr بدلاً من getLevelNamesMapping ---
+level_name = os.getenv("LOGGING_LEVEL", default_level).upper()
+LOGGING_LEVEL = getattr(logging, level_name, logging.INFO)
+
+# Set root logger level
 logging.getLogger().setLevel(LOGGING_LEVEL)
-# Clear any existing handlers to avoid duplicate output
 logging.getLogger().handlers.clear()
 
-# Keep third-party library noise down (only warnings+)
+# Keep third-party library noise down
 NOISY_LOGGERS = (
-    # AWS SDK
     "boto3", "botocore", "urllib3", "s3transfer", "watchtower",
-    # HTTP clients
     "httpcore", "httpx", "aiohttp", "requests", "hpack",
-    # Async / event loop
-    "asyncio", "concurrent",
-    # AI SDKs
-    "openai", "anthropic", "httpx._client",
-    # Web frameworks
-    "uvicorn.access", "uvicorn.error", "fastapi",
-    # Database
-    "sqlalchemy", "databases", "aiosqlite",
-    # Other
-    "websockets", "multipart", "charset_normalizer",
+    "asyncio", "concurrent", "openai", "anthropic", "httpx._client",
+    "uvicorn.access", "uvicorn.error", "fastapi", "sqlalchemy", 
+    "databases", "aiosqlite", "websockets", "multipart", "charset_normalizer",
 )
 for noisy_logger in NOISY_LOGGERS:
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-# Optional: separate CloudWatch handler level (defaults to INFO)
-CLOUDWATCH_LOG_LEVEL = logging.getLevelNamesMapping().get(
-    os.getenv("CLOUDWATCH_LOG_LEVEL", "INFO").upper(),
-    LOGGING_LEVEL,
-)
+# --- الإصلاح هنا أيضاً: توافق CloudWatch ---
+cw_level_name = os.getenv("CLOUDWATCH_LOG_LEVEL", "INFO").upper()
+CLOUDWATCH_LOG_LEVEL = getattr(logging, cw_level_name, LOGGING_LEVEL)
 
 # Common pre-chain used by both console and CloudWatch formatters
-# Simplified: only func_name for cleaner output (filename:lineno adds clutter)
 foreign_pre_chain = [
     structlog.stdlib.add_log_level,
     structlog.stdlib.PositionalArgumentsFormatter(),
@@ -71,13 +57,11 @@ foreign_pre_chain = [
     structlog.contextvars.merge_contextvars,
 ]
 
-# Renderer selection per environment
 if ENV_MODE in ("LOCAL", "STAGING"):
     console_renderer = structlog.dev.ConsoleRenderer(colors=True)
 else:
     console_renderer = structlog.processors.JSONRenderer()
 
-# Configure structlog to emit into stdlib logging
 structlog.configure(
     processors=[
         structlog.stdlib.add_log_level,
@@ -98,7 +82,6 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-# Console handler (stdout)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(LOGGING_LEVEL)
 console_handler.setFormatter(
@@ -109,9 +92,7 @@ console_handler.setFormatter(
 )
 logging.getLogger().addHandler(console_handler)
 
-
 def _setup_cloudwatch_logging() -> None:
-    """Attach a CloudWatch handler when enabled and available."""
     if ENV_MODE not in ("PRODUCTION", "STAGING"):
         return
 
@@ -149,15 +130,10 @@ def _setup_cloudwatch_logging() -> None:
         else:
             logs_client = boto3.client("logs", region_name=aws_region)
 
-        # Best-effort: ensure log group exists
         try:
             logs_client.create_log_group(logGroupName=log_group_name)
-        except logs_client.exceptions.ResourceAlreadyExistsException:
+        except Exception:
             pass
-        except Exception as group_error:
-            logging.getLogger().warning(
-                f"Could not create CloudWatch log group '{log_group_name}': {group_error}"
-            )
 
         cloudwatch_handler = watchtower.CloudWatchLogHandler(
             log_group=log_group_name,
@@ -176,24 +152,14 @@ def _setup_cloudwatch_logging() -> None:
             )
         )
         logging.getLogger().addHandler(cloudwatch_handler)
-        logging.getLogger().info(
-            f"CloudWatch logging enabled: group={log_group_name}, stream={log_stream_name}"
-        )
-    except ImportError:
-        logging.getLogger().warning(
-            "watchtower not installed. CloudWatch logging disabled. Install with: uv add watchtower"
-        )
     except Exception as e:
-        logging.getLogger().warning(
-            f"Failed to setup CloudWatch logging: {e}. Falling back to stdout only."
-        )
-
+        logging.getLogger().warning(f"CloudWatch setup failed: {e}")
 
 _setup_cloudwatch_logging()
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
-
+# --- FileDebugLogger implementation ---
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Any
@@ -215,78 +181,42 @@ class FileDebugLogger:
     
     def _get_file(self, session: str, category: str):
         key = f"{session}:{category}"
-        
         if key not in self._files:
             self._debug_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{category}_{session[:8]}_{timestamp}.log" if session else f"{category}_{timestamp}.log"
             filepath = self._debug_dir / filename
-            
             self._files[key] = open(filepath, 'a', encoding='utf-8')
             self._start_times[key] = time.perf_counter()
-            
-            self._files[key].write(f"# Debug Log: {category}\n")
-            self._files[key].write(f"# Session: {session or 'default'}\n")
-            self._files[key].write(f"# Started: {datetime.now().isoformat()}\n")
-            self._files[key].write(f"# {'=' * 60}\n\n")
+            self._files[key].write(f"# Debug Log: {category}\n# Session: {session or 'default'}\n# Started: {datetime.now().isoformat()}\n# {'=' * 60}\n\n")
             self._files[key].flush()
-        
         return self._files[key], self._start_times[key]
     
-    def log(
-        self,
-        message: str,
-        session: str = "default",
-        category: str = "debug",
-        save_to_file: bool = True,
-        **kwargs
-    ):
-        if not save_to_file:
-            return
-        
+    def log(self, message: str, session: str = "default", category: str = "debug", save_to_file: bool = True, **kwargs):
+        if not save_to_file: return
         try:
             file, start_time = self._get_file(session, category)
             elapsed_ms = (time.perf_counter() - start_time) * 1000
-            
             extras = " | ".join(f"{k}={v}" for k, v in kwargs.items()) if kwargs else ""
             extras_str = f" | {extras}" if extras else ""
-            
             line = f"[{elapsed_ms:10.1f}ms] {message}{extras_str}\n"
             file.write(line)
             file.flush()
-        except Exception as e:
-            pass
+        except: pass
     
     def close(self, session: str = None, category: str = None):
         if session and category:
             key = f"{session}:{category}"
             if key in self._files:
-                try:
-                    self._files[key].close()
-                except:
-                    pass
+                try: self._files[key].close()
+                except: pass
                 del self._files[key]
-                if key in self._start_times:
-                    del self._start_times[key]
+                self._start_times.pop(key, None)
         else:
             for f in self._files.values():
-                try:
-                    f.close()
-                except:
-                    pass
+                try: f.close()
+                except: pass
             self._files.clear()
             self._start_times.clear()
-    
-    def close_session(self, session: str):
-        keys_to_remove = [k for k in self._files.keys() if k.startswith(f"{session}:")]
-        for key in keys_to_remove:
-            try:
-                self._files[key].close()
-            except:
-                pass
-            del self._files[key]
-            if key in self._start_times:
-                del self._start_times[key]
-
 
 file_debug = FileDebugLogger()
