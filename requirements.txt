@@ -7,3 +7,11 @@ supabase
 structlog
 websockets
 requests
+playwright
+tavily-python
+daytona-sdk
+langfuse
+watchtower
+boto3
+pydantic
+pydantic-settings
