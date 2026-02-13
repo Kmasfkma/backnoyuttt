@@ -25,11 +25,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (تعديل مهم لـ langfuse)
+# 4. تثبيت المكتبات (تثبيت إصدار قديم من langfuse)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    # تثبيت langfuse ومكتبات Kortix الأخرى صراحة
-    pip install playwright tavily-python daytona-sdk "langfuse>=2.0.0" && \
+    # نستخدم إصدار 1.x لضمان التوافق مع الكود القديم
+    pip install playwright tavily-python daytona-sdk "langfuse<2.0.0" && \
     pip install -r requirements.txt
 
 # 5. تثبيت الكروم
