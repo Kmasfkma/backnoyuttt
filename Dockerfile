@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات
+# 4. تثبيت المكتبات (نحتفظ بملف requirements.txt الأخير)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
@@ -37,8 +37,9 @@ RUN python -m playwright install chromium
 # 6. نسخ الكود
 COPY --chown=1000:1000 . .
 
-# --- التصحيح السحري الشامل: تعطيل Daytona في كل الملفات ---
-# 1. إنشاء ملف محاكاة (Mock) ذكي
+# --- التصحيح السحري الشامل (Daytona + MCP) ---
+
+# 1. إنشاء ملف محاكاة (Mock) ذكي لـ Daytona
 RUN echo 'class Mock:\n\
     def __init__(self, *args, **kwargs): pass\n\
     def __call__(self, *args, **kwargs): return self\n\
@@ -47,11 +48,14 @@ RUN echo 'class Mock:\n\
     async def __aenter__(self): return self\n\
     async def __aexit__(self, *args): pass\n\
 \n\
-# تعيين كل الأسماء المطلوبة لهذا الكلاس\n\
 AsyncDaytona=DaytonaConfig=CreateSandboxFromSnapshotParams=AsyncSandbox=SessionExecuteRequest=Resources=SandboxState=WorkspaceState=Mock' > /app/mock_daytona.py
 
-# 2. توجيه الكود لاستخدام الملف الوهمي بدلاً من المكتبة المفقودة
+# 2. تطبيق الـ Mock على ملفات Daytona
 RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from daytona_sdk/from mock_daytona/g'
+
+# 3. (جديد) تطبيق الـ Mock على ملف MCP المسبب للمشكلة
+# نقوم بتعطيل استيراد streamable_http واستبداله بـ pass لتجاوز الخطأ
+RUN sed -i "s/from mcp.client.streamable_http import streamablehttp_client/class streamablehttp_client: pass # Mocked/" core/mcp_module/mcp_service.py || true
 
 USER 1000
 EXPOSE 8000
