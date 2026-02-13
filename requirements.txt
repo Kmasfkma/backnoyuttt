@@ -40,5 +40,6 @@ firecrawl-py
 exa-py
 composio-core
 replicate
+mailtrap
 # --- بروتوكول MCP ---
 mcp
