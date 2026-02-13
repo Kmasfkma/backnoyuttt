@@ -37,14 +37,22 @@ RUN python -m playwright install chromium
 # 6. نسخ الكود
 COPY --chown=1000:1000 . .
 
-# --- التصحيح السحري الشامل: تعطيل Daytona في كل الملفات ---
-# 1. إصلاح tool_base.py
-RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/tool_base.py || true
-# 2. إصلاح resolver.py
-RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/resolver.py || true
-# 3. إصلاح sandbox.py (السبب في الخطأ الأخير)
-# بنستبدل سطر الاستيراد الطويل بتعريفات وهمية (Empty Classes) عشان الكود ما يضربش
-RUN sed -i "s/from daytona_sdk import.*/class AsyncDaytona: pass\nclass DaytonaConfig: pass\nclass CreateSandboxFromSnapshotParams: pass\nclass AsyncSandbox: pass\nclass SessionExecuteRequest: pass\nclass Resources: pass\nclass SandboxState: pass/" core/sandbox/sandbox.py || true
+# --- الخطوة السحرية: إنشاء ملف محاكاة (Mock) ذكي ---
+# ننشئ ملف بايثون يحتوي على كلاس يقبل أي شيء (Arguments, Context Managers, Awaitables)
+RUN echo 'class Mock:\n\
+    def __init__(self, *args, **kwargs): pass\n\
+    def __call__(self, *args, **kwargs): return self\n\
+    def __getattr__(self, name): return self\n\
+    def __await__(self): yield None\n\
+    async def __aenter__(self): return self\n\
+    async def __aexit__(self, *args): pass\n\
+\n\
+# تعيين كل الأسماء المطلوبة لهذا الكلاس\n\
+AsyncDaytona=DaytonaConfig=CreateSandboxFromSnapshotParams=AsyncSandbox=SessionExecuteRequest=Resources=SandboxState=WorkspaceState=Mock' > /app/mock_daytona.py
+
+# --- توجيه الكود لاستخدام الملف الوهمي بدلاً من المكتبة المفقودة ---
+# نغير أي سطر يستورد من "daytona_sdk" ليستورد من "mock_daytona"
+RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from daytona_sdk/from mock_daytona/g'
 
 USER 1000
 EXPOSE 8000
