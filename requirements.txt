@@ -41,5 +41,6 @@ exa-py
 composio-core
 replicate
 mailtrap
+novu-py
 # --- بروتوكول MCP ---
 mcp
