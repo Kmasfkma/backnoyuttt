@@ -40,3 +40,5 @@ firecrawl-py
 exa-py
 composio-core
 replicate
+# --- بروتوكول MCP ---
+mcp
