@@ -10,10 +10,11 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-# استخدام إصدار 0.102.0 لأنه ظهر في قائمة الإصدارات المتاحة في الخطأ
-daytona-sdk==0.102.0
-daytona-api-client==0.102.0
+# نستخدم إصدار 0.20.0 لأنه متاح وقديم بما يكفي للتوافق
+daytona-sdk==0.20.0
+# langfuse القديم يتطلب httpx قديم
 langfuse<2.0.0
+httpx==0.24.1
 watchtower
 boto3
 pydantic
