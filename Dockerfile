@@ -50,12 +50,12 @@ RUN echo 'class Mock:\n\
 \n\
 AsyncDaytona=DaytonaConfig=CreateSandboxFromSnapshotParams=AsyncSandbox=SessionExecuteRequest=Resources=SandboxState=WorkspaceState=Mock' > /app/mock_daytona.py
 
-# 2. تطبيق الـ Mock على ملفات Daytona
+# 2. تطبيق الـ Mock على ملفات Daytona (بحث واستبدال شامل)
 RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from daytona_sdk/from mock_daytona/g'
 
-# 3. (جديد) تطبيق الـ Mock على ملف MCP المسبب للمشكلة
-# نقوم بتعطيل استيراد streamable_http واستبداله بـ pass لتجاوز الخطأ
-RUN sed -i "s/from mcp.client.streamable_http import streamablehttp_client/class streamablehttp_client: pass # Mocked/" core/mcp_module/mcp_service.py || true
+# 3. تطبيق الـ Mock على ملفات MCP (بحث واستبدال شامل لكل الملفات)
+# هذا الأمر سيبحث في كل ملفات بايثون ويصلح الاستيراد المكسور أينما وجد
+RUN find core -name "*.py" -print0 | xargs -0 sed -i "s/from mcp.client.streamable_http import streamablehttp_client/class streamablehttp_client: pass # Mocked/"
 
 USER 1000
 EXPOSE 8000
