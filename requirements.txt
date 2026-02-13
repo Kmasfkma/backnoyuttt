@@ -10,7 +10,9 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-daytona-sdk
+# تثبيت إصدارات محددة لحل مشكلة WorkspaceState
+daytona-sdk==0.4.0
+daytona-api-client==0.4.0
 langfuse<2.0.0
 watchtower
 boto3
