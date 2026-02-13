@@ -25,20 +25,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (تثبيت إصدار قديم من langfuse)
+# 4. تثبيت المكتبات (تثبيت PyJWT والنواقص)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    # نستخدم إصدار 1.x لضمان التوافق مع الكود القديم
-    pip install playwright tavily-python daytona-sdk "langfuse<2.0.0" && \
+    # تثبيت النواقص يدوياً للتأكد، بالإضافة لقراءة الملف
+    pip install playwright tavily-python daytona-sdk "langfuse<2.0.0" PyJWT passlib python-multipart && \
     pip install -r requirements.txt
 
 # 5. تثبيت الكروم
 RUN python -m playwright install chromium
 
-# 6. نسخ الكود والتشغيل
+# 6. نسخ الكود
 USER 1000
 COPY --chown=1000:1000 . .
 
 EXPOSE 8000
 
+# 7. التشغيل
 CMD ["sh", "-c", "redis-server --daemonize yes --maxmemory 40mb --maxmemory-policy allkeys-lru && uvicorn api:app --host 0.0.0.0 --port 8000 --workers 1"]
