@@ -1,46 +1,39 @@
-# 1. Base Image
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+# 1. استخدام صورة مايكروسوفت الجاهزة (لتجنب استهلاك موارد المعالج في التسطيب)
+FROM mcr.microsoft.com/playwright/python:v1.41.0-jammy
 
-ENV ENV_MODE production
-ENV PYTHONUNBUFFERED=1 
-ENV UV_LINK_MODE=copy
-ENV PYTHONPATH=/app
-ENV PATH="/app/.venv/bin:$PATH"
+# إعدادات البيئة لتقليل استهلاك الذاكرة
+ENV ENV_MODE=production \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH="/home/user/.local/bin:$PATH" \
+    # تعطيل الـ Cache الخاص بـ PIP لتوفير المساحة
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# 2. Install System Dependencies + Redis
+# 2. تثبيت Redis و Git كـ Root
+USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    build-essential \
-    python3-dev \
-    libpango-1.0-0 \
-    libpangoft2-1.0-0 \
-    libcairo2 \
-    libgdk-pixbuf-2.0-0 \
-    libffi-dev \
-    shared-mime-info \
     redis-server \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Setup UV and Install Dependencies
-COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
+# 3. إعداد صلاحيات المستخدم 1000
+RUN mkdir -p /var/lib/redis /etc/redis /var/log/redis /app && \
+    chown -R 1000:1000 /var/lib/redis /etc/redis /var/log/redis /app
 
-# 4. Install Playwright
-RUN . .venv/bin/activate && pip install playwright && playwright install chromium --with-deps
+# التبديل للمستخدم الافتراضي
+USER 1000
 
-# 5. Copy Application Code
-COPY . .
+# 4. تثبيت المكتبات (pip المباشر أسرع في هذه المواصفات)
+COPY --chown=1000:1000 requirements.txt ./
+RUN pip install --upgrade pip && \
+    pip install --user -r requirements.txt
 
-# Setup Permissions
-RUN useradd -m -u 1000 user
-RUN mkdir -p /var/lib/redis && chown -R user:user /var/lib/redis /etc/redis /var/log/redis
-RUN chown -R user:user /app
+# 5. نسخ الكود
+COPY --chown=1000:1000 . .
 
-USER user
 EXPOSE 7860
 
-# 6. Start Command (Point to api:app in root)
-CMD ["sh", "-c", "redis-server --daemonize yes && uv run gunicorn api:app -w ${WORKERS:-4} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:7860 --timeout ${TIMEOUT:-120} --graceful-timeout 30 --keep-alive 65"]
+# 6. التشغيل (تقييد Redis بـ 50MB فقط من الرامات + 1 Worker للتطبيق)
+CMD ["sh", "-c", "redis-server --daemonize yes --maxmemory 50mb --maxmemory-policy allkeys-lru && python3 -m uvicorn api:app --host 0.0.0.0 --port 7860 --workers 1 --timeout-keep-alive 60"]
