@@ -32,3 +32,4 @@ asyncio
 # --- قواعد البيانات ---
 sqlalchemy
 asyncpg
+psycopg[binary]
