@@ -10,18 +10,19 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-# تثبيت SDK فقط وتركها تدير تبعياتها
-daytona-sdk
+# استخدام إصدار 0.102.0 لأنه ظهر في قائمة الإصدارات المتاحة في الخطأ
+daytona-sdk==0.102.0
+daytona-api-client==0.102.0
 langfuse<2.0.0
 watchtower
 boto3
 pydantic
 pydantic-settings
-# --- مكتبات المصادقة والأمان ---
+# --- مكتبات المصادقة ---
 PyJWT
 passlib[bcrypt]
 python-multipart
 cryptography
-# --- مكتبات مساعدة إضافية ---
+# --- مكتبات إضافية ---
 aiohttp
 asyncio
