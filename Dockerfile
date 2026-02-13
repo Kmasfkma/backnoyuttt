@@ -25,12 +25,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (من الملف الشامل)
+# 4. تثبيت المكتبات (الاعتماد الكلي على الملف لتجنب تضارب الإصدارات)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    # تثبيت النواقص يدوياً كإجراء احترازي
-    pip install playwright tavily-python daytona-sdk "langfuse<2.0.0" PyJWT passlib python-multipart cryptography && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    # تثبيت Playwright يدوياً للتأكد فقط (لأنه خارج requirements أحياناً)
+    pip install playwright
 
 # 5. تثبيت الكروم
 RUN python -m playwright install chromium
