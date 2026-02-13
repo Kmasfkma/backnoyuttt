@@ -16,7 +16,11 @@ watchtower
 boto3
 pydantic
 pydantic-settings
-# --- مكتبات المصادقة (Authentication) ---
+# --- مكتبات المصادقة والأمان ---
 PyJWT
 passlib[bcrypt]
 python-multipart
+cryptography
+# --- مكتبات مساعدة إضافية ---
+aiohttp
+asyncio
