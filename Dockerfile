@@ -1,4 +1,4 @@
-# 1. استخدام بايثون 3.11 لضمان التوافق مع تحديث الـ logger الذي قمت به
+# 1. استخدام بايثون 3.11
 FROM python:3.11-slim-bookworm
 
 ENV ENV_MODE=production \
@@ -8,7 +8,7 @@ ENV ENV_MODE=production \
 
 WORKDIR /app
 
-# 2. تثبيت التبعات كـ Root (الريدز والجيت ومكتبات النظام للكروم)
+# 2. تثبيت التبعات
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-server \
@@ -21,24 +21,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. إعداد الصلاحيات للمستخدم 1000
+# 3. إعداد الصلاحيات
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (نثبت playwright صراحة لضمان وجودها)
+# 4. تثبيت المكتبات (إضافة tavily-python يدوياً لحل المشكلة)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install playwright && \
+    pip install playwright tavily-python && \
     pip install -r requirements.txt
 
-# 5. تثبيت الكروم (استخدام python -m لضمان الوصول للمكتبة)
+# 5. تثبيت الكروم
 RUN python -m playwright install chromium
 
-# التبديل للمستخدم 1000 قبل نسخ الكود لضمان الملكية
+# التبديل للمستخدم ونقل الكود
 USER 1000
 COPY --chown=1000:1000 . .
 
 EXPOSE 8000
 
-# 6. التشغيل (حمية قاسية لـ Redis و Worker واحد فقط لـ FastAPI)
+# التشغيل
 CMD ["sh", "-c", "redis-server --daemonize yes --maxmemory 40mb --maxmemory-policy allkeys-lru && uvicorn api:app --host 0.0.0.0 --port 8000 --workers 1"]
