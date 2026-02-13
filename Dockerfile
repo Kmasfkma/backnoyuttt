@@ -1,4 +1,4 @@
-# استخدام بايثون 3.11 مباشرة لحل مشكلة الـ logging
+# 1. استخدام بايثون 3.11 لحل مشكلة الـ Logging السابقة
 FROM python:3.11-slim-bookworm
 
 ENV ENV_MODE=production \
@@ -8,22 +8,50 @@ ENV ENV_MODE=production \
 
 WORKDIR /app
 
-# تثبيت Redis وتبعيات المتصفح الضرورية فقط (بدون تحميل متصفحات ضخمة)
+# 2. تثبيت التبعات كـ Root (Redis + مكتبات النظام للكروم)
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-server \
-    curl \
     git \
+    curl \
+    # هذه المكتبات ضرورية جداً لتشغيل الكروم على نسخة slim
+    libnss3 \
+    libnspr4 \
+    libasound2 \
+    libatk1.0-0 \
+    libc6 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libgcc1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
-# تثبيت المكتبات وتحديد إصدار Playwright
+# 3. تثبيت مكتبات البايثون
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# تثبيت الكروم فقط (بدون deps إضافية لتوفير الذاكرة)
-RUN playwright install chromium
+# 4. تثبيت الكروم (الإصلاح هنا: استدعاء عبر python -m)
+RUN python -m playwright install chromium
 
-# إعدادات المستخدم 1000 لضمان الصلاحيات
+# 5. إعداد المستخدم والصلاحيات
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 USER 1000
@@ -32,5 +60,5 @@ COPY --chown=1000:1000 . .
 
 EXPOSE 8000
 
-# تقييد Redis بـ 40MB فقط لترك مساحة للتطبيق (512MB محدودة جداً)
+# تقييد Redis لتوفير الرامات للـ Agent الخاص بك
 CMD ["sh", "-c", "redis-server --daemonize yes --maxmemory 40mb --maxmemory-policy allkeys-lru && uvicorn api:app --host 0.0.0.0 --port 8000 --workers 1"]
