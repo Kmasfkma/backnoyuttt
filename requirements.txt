@@ -33,3 +33,9 @@ asyncio
 sqlalchemy
 asyncpg
 psycopg[binary]
+# --- المدفوعات والخدمات الخارجية (من ملف env) ---
+stripe
+sentry-sdk
+firecrawl-py
+exa-py
+composio-core
