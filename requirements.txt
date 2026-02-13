@@ -10,7 +10,7 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-# نثبت SDK فقط بإصدار قديم ونتركه يدير تبعياته
+# نثبت SDK فقط بإصدار قديم ونتركه يدير تبعياته (مع Mocking في Dockerfile)
 daytona-sdk==0.9.0
 # Langfuse القديم يحتاج httpx قديم
 langfuse<2.0.0
@@ -20,6 +20,7 @@ watchtower
 boto3
 pydantic
 pydantic-settings
+litellm
 # --- مكتبات المصادقة والأمان ---
 PyJWT
 passlib[bcrypt]
