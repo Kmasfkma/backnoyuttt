@@ -10,12 +10,11 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-# نستخدم إصدار 0.9.0 لأنه قديم بما يكفي لقبول httpx القديم
+# نثبت SDK فقط بإصدار قديم ونتركه يدير تبعياته
 daytona-sdk==0.9.0
-daytona-api-client==0.9.0
 # Langfuse القديم يحتاج httpx قديم
 langfuse<2.0.0
-# تثبيت httpx يتوافق مع langfuse
+# تثبيت httpx يتوافق مع langfuse ومع daytona القديم
 httpx==0.24.1
 watchtower
 boto3
