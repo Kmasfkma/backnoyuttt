@@ -7,6 +7,7 @@ supabase
 structlog
 websockets
 requests
+# --- مكتبات Kortix AI ---
 playwright
 tavily-python
 daytona-sdk
@@ -15,3 +16,7 @@ watchtower
 boto3
 pydantic
 pydantic-settings
+# --- مكتبات المصادقة (Authentication) ---
+PyJWT
+passlib[bcrypt]
+python-multipart
