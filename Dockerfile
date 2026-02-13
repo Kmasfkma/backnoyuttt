@@ -25,12 +25,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (من الملف بدقة)
+# 4. تثبيت المكتبات (الاعتماد على requirements.txt المحدث)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    # تثبيت المتطلبات أولاً لتطبيق الإصدارات المحددة
     pip install -r requirements.txt && \
-    # تثبيت Playwright للتأكد من وجوده
+    # تثبيت Playwright للتأكد
     pip install playwright
 
 # 5. تثبيت الكروم
