@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 user || true
 RUN mkdir -p /var/lib/redis && chown -R 1000:1000 /var/lib/redis /app
 
-# 4. تثبيت المكتبات (نحتفظ بملف requirements.txt الأخير كما هو)
+# 4. تثبيت المكتبات (نحتفظ بملف requirements.txt الأخير)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
@@ -37,11 +37,14 @@ RUN python -m playwright install chromium
 # 6. نسخ الكود
 COPY --chown=1000:1000 . .
 
-# --- التصحيح السحري: تعطيل Daytona في كل الملفات المسببة للمشاكل ---
+# --- التصحيح السحري الشامل: تعطيل Daytona في كل الملفات ---
 # 1. إصلاح tool_base.py
 RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/tool_base.py || true
-# 2. إصلاح resolver.py (السبب في الخطأ الأخير)
+# 2. إصلاح resolver.py
 RUN sed -i "s/from daytona_sdk import AsyncSandbox/class AsyncSandbox: pass # Mocked/" core/sandbox/resolver.py || true
+# 3. إصلاح sandbox.py (السبب في الخطأ الأخير)
+# بنستبدل سطر الاستيراد الطويل بتعريفات وهمية (Empty Classes) عشان الكود ما يضربش
+RUN sed -i "s/from daytona_sdk import.*/class AsyncDaytona: pass\nclass DaytonaConfig: pass\nclass CreateSandboxFromSnapshotParams: pass\nclass AsyncSandbox: pass\nclass SessionExecuteRequest: pass\nclass Resources: pass\nclass SandboxState: pass/" core/sandbox/sandbox.py || true
 
 USER 1000
 EXPOSE 8000
