@@ -10,9 +10,8 @@ requests
 # --- مكتبات Kortix AI ---
 playwright
 tavily-python
-# تثبيت إصدارات محددة لحل مشكلة Daytona
-daytona-sdk==0.10.0
-daytona-api-client==0.10.0
+# تثبيت SDK فقط وتركها تدير تبعياتها
+daytona-sdk
 langfuse<2.0.0
 watchtower
 boto3
