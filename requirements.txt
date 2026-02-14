@@ -19,7 +19,7 @@ langfuse<2.0.0
 httpx==0.24.1
 watchtower
 boto3
-pydantic==1.10.7
+pydantic==1.10.17
 litellm<1.0.0
 # --- مكتبات المصادقة والأمان ---
 PyJWT
