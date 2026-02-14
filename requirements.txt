@@ -12,7 +12,7 @@ requests
 playwright
 tavily-python
 # نثبت SDK فقط بإصدار قديم ونتركه يدير تبعياته (مع Mocking في Dockerfile)
-daytona-sdk==0.9.0
+# daytona-sdk removed - using mocks in Dockerfile
 # Langfuse القديم يحتاج httpx قديم
 langfuse<2.0.0
 # تثبيت httpx يتوافق مع langfuse ومع daytona القديم
