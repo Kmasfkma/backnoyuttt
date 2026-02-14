@@ -37,7 +37,7 @@ psycopg[binary]
 stripe
 sentry-sdk
 firecrawl-py==2.16.5
-exa-py==2.4.0
+# exa-py removed - conflicts with httpx/httpcore pins
 # composio-core removed - requires pydantic v2
 replicate==0.26.0
 mailtrap==2.3.0
