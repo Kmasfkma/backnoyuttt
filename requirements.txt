@@ -40,7 +40,7 @@ firecrawl-py==2.16.5
 # exa-py removed - conflicts with httpx/httpcore pins
 # composio-core removed - requires pydantic v2
 replicate==0.26.0
-mailtrap==2.3.0
+# mailtrap removed - requires pydantic v2
 novu-py==0.4.2
 # --- بروتوكول MCP ---
 # mcp removed - requires pydantic v2

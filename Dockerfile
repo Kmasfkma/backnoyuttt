@@ -65,6 +65,9 @@ RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from composio_client imp
 # هذا الأمر سيبحث في كل ملفات بايثون ويصلح الاستيراد المكسور أينما وجد
 RUN find core -name "*.py" -print0 | xargs -0 sed -i "s/from mcp.client.streamable_http import streamablehttp_client/class streamablehttp_client: pass # Mocked/"
 
+# 6. تطبيق الـ Mock على mailtrap (لأنه يتطلب pydantic v2)
+RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/import mailtrap as mt/import mock_daytona as mt # Mocked/'
+
 USER 1000
 EXPOSE 8000
 
