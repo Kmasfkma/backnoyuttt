@@ -3,7 +3,8 @@ uvicorn
 python-dotenv
 psutil
 redis
-supabase
+# نثبت نسخة قديمة من supabase تتوافق مع httpx 0.24.1 لمنع الـ Resolution Loop
+supabase==2.0.3
 structlog
 websockets
 requests
