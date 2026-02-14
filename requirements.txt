@@ -28,7 +28,7 @@ python-multipart
 cryptography
 # --- مكتبات مساعدة إضافية ---
 aiohttp
-asyncio
+# asyncio removed (stdlib)
 # --- قواعد البيانات ---
 sqlalchemy
 asyncpg
@@ -36,11 +36,11 @@ psycopg[binary]
 # --- المدفوعات والخدمات الخارجية ---
 stripe
 sentry-sdk
-firecrawl-py
-exa-py
+firecrawl-py==2.16.5
+exa-py==2.4.0
 # composio-core removed - requires pydantic v2
-replicate
-mailtrap
-novu-py
+replicate==0.26.0
+mailtrap==2.3.0
+novu-py==0.4.2
 # --- بروتوكول MCP ---
 # mcp removed - requires pydantic v2
