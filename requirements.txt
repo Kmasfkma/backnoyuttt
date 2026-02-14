@@ -1,4 +1,4 @@
-fastapi
+fastapi<0.100.0
 uvicorn
 python-dotenv
 psutil
@@ -20,7 +20,7 @@ httpx==0.24.1
 watchtower
 boto3
 pydantic==1.10.7
-litellm
+litellm<1.0.0
 # --- مكتبات المصادقة والأمان ---
 PyJWT
 passlib[bcrypt]
@@ -38,9 +38,9 @@ stripe
 sentry-sdk
 firecrawl-py
 exa-py
-composio-core
+composio-core==0.5.0
 replicate
 mailtrap
 novu-py
 # --- بروتوكول MCP ---
-mcp
+# mcp removed - requires pydantic v2
