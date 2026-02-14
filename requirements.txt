@@ -38,7 +38,7 @@ stripe
 sentry-sdk
 firecrawl-py
 exa-py
-composio-core==0.5.0
+# composio-core removed - requires pydantic v2
 replicate
 mailtrap
 novu-py

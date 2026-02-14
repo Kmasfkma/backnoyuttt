@@ -53,7 +53,15 @@ AsyncDaytona=DaytonaConfig=CreateSandboxFromSnapshotParams=AsyncSandbox=SessionE
 # 2. تطبيق الـ Mock على ملفات Daytona (بحث واستبدال شامل)
 RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from daytona_sdk/from mock_daytona/g'
 
-# 3. تطبيق الـ Mock على ملفات MCP (بحث واستبدال شامل لكل الملفات)
+# 3. إنشاء ملف محاكاة (Mock) ذكي لـ Composio
+RUN echo 'class Composio:\n\
+    def __init__(self, *args, **kwargs):\n\
+        raise RuntimeError("Composio is disabled in this build (pydantic v1 compatibility)")\n' > /app/composio_client.py
+
+# 4. تطبيق الـ Mock على ملفات Composio (بحث واستبدال شامل)
+RUN find core -name "*.py" -print0 | xargs -0 sed -i 's/from composio_client import Composio/from composio_client import Composio/g'
+
+# 5. تطبيق الـ Mock على ملفات MCP (بحث واستبدال شامل لكل الملفات)
 # هذا الأمر سيبحث في كل ملفات بايثون ويصلح الاستيراد المكسور أينما وجد
 RUN find core -name "*.py" -print0 | xargs -0 sed -i "s/from mcp.client.streamable_http import streamablehttp_client/class streamablehttp_client: pass # Mocked/"
 
